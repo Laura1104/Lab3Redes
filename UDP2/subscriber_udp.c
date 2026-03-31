@@ -8,15 +8,21 @@
 
 #define PORT 5000
 #define BUFFER_SIZE 1024
+#define TOPIC_SIZE 64
 
-int main()
+int main(int argc, char *argv[])
 {
     int sockfd;
     struct sockaddr_in server_addr, local_addr;
-    socklen_t addr_len = sizeof(server_addr);
     char buffer[BUFFER_SIZE];
 
-    // Crear socket UDP
+    if (argc < 2)
+    {
+        printf("Uso: %s <tema1> [tema2] [tema3] ...\n", argv[0]);
+        printf("Ejemplo: %s PartidoA PartidoB\n", argv[0]);
+        return 1;
+    }
+
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0)
     {
@@ -25,12 +31,10 @@ int main()
     }
 
     memset(&local_addr, 0, sizeof(local_addr));
-
     local_addr.sin_family = AF_INET;
-    local_addr.sin_port = htons(0); // Puerto automático
+    local_addr.sin_port = htons(0);
     local_addr.sin_addr.s_addr = INADDR_ANY;
 
-    // Bind local
     if (bind(sockfd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
     {
         perror("bind");
@@ -39,7 +43,6 @@ int main()
     }
 
     memset(&server_addr, 0, sizeof(server_addr));
-
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(PORT);
 
@@ -50,14 +53,28 @@ int main()
         exit(1);
     }
 
-    // Enviar suscripción
-    strcpy(buffer, "SUBSCRIBE");
+    printf("[SUBSCRIBER UDP] Suscribiendose a:\n");
 
-    sendto(sockfd, buffer, strlen(buffer), 0,
-           (struct sockaddr *)&server_addr,
-           sizeof(server_addr));
+    for (int i = 1; i < argc; i++)
+    {
+        memset(buffer, 0, BUFFER_SIZE);
+        snprintf(buffer, BUFFER_SIZE, "SUBSCRIBE %s", argv[i]);
 
-    printf("[SUBSCRIBER UDP] Suscrito al broker...\n");
+        int sent = sendto(sockfd, buffer, strlen(buffer), 0,
+                          (struct sockaddr *)&server_addr,
+                          sizeof(server_addr));
+
+        if (sent < 0)
+        {
+            perror("sendto");
+        }
+        else
+        {
+            printf("  - %s\n", argv[i]);
+        }
+    }
+
+    printf("\n[SUBSCRIBER UDP] Esperando actualizaciones...\n\n");
 
     while (1)
     {
@@ -72,7 +89,18 @@ int main()
         }
 
         buffer[n] = '\0';
-        printf("[SUBSCRIBER] Mensaje recibido: %s", buffer);
+
+        char topic[TOPIC_SIZE];
+        char content[BUFFER_SIZE];
+
+        if (sscanf(buffer, "MSG %63s %[^\n]", topic, content) == 2)
+        {
+            printf("[%s] %s\n", topic, content);
+        }
+        else
+        {
+            printf("[SUBSCRIBER] Mensaje recibido: %s\n", buffer);
+        }
     }
 
     close(sockfd);
